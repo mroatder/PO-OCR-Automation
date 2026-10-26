@@ -48,15 +48,16 @@ pip install -r requirements.txt
 python demo/app_qt.py          # desktop review screen (PyQt6), same layout and styling as the real tool
 python demo/demo.py            # same scenarios as plain terminal output
 python demo/gui.py             # lightweight browser version: http://127.0.0.1:8765
+python demo/make_gif.py        # re-record docs/demo.gif (needs Pillow)
 ```
 
-![Review screen: OCR misread 90 as 96, the row is flagged with low trust and the guard explains why](docs/app-flagged.png)
+![Animated walkthrough: five OCR failures, each one flagged by the guard, then the export dialog](docs/demo.gif)
 
 The screen is the production tool's review step (table on the left, source page with highlighted fields on the right) filled with **fictional test data**. Use the dropdown to inject an OCR failure; extraction reads **only from the marked zones**, and [`qty_guard`](src/qty_guard.py) judges every row. Hover a flagged row for the reason, or select it and read the status bar.
 
-| Clean scan | Prepare Export |
+| Misread digit flagged | Prepare Export |
 |---|---|
-| ![All rows verified](docs/app-clean.png) | ![Export preparation dialog](docs/app-export.png) |
+| ![Flagged row](docs/app-flagged.png) | ![Export preparation dialog](docs/app-export.png) |
 
 Scenarios: a clean page, a misread digit (90 to 96), an entire row lost, a quantity inflated 100x, and an engine reading the wrong column. Each one ends in a flag or page warning; none passes as green. The OCR stand-in is the PDF's embedded text, so the demo is deterministic; the real tool runs PaddleOCR on scans. Guard messages are Thai in the tool; the demo shows English translations.
 
