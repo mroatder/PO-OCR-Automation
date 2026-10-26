@@ -31,15 +31,75 @@ OCR will never be 100% right. A wrong quantity that looks green is far worse tha
 | Fail loud | An unreadable zone becomes `Unknown` / red, never a value borrowed from elsewhere. |
 | Human in the loop | Review screen shows confidence, warnings and the source crop; export asks again while warnings remain. |
 
-## Pipeline
+## How it works
 
-```
-PDF -> page images -> OCR -> route template -> calibrate zones
-    -> per-customer engine -> qty_guard (flags only)
-    -> verification UI -> ERP CSV
+### The pipeline
+
+```mermaid
+flowchart LR
+    PDF["PO scan (PDF)"] --> IMG["Page images"]
+    IMG --> OCR["OCR"]
+    OCR --> ROUTE["Route to a<br/>customer template"]
+    ROUTE --> CAL["Calibrate zones<br/>(shift, scale, skew)"]
+    CAL --> ENG["Customer engine<br/>reads marked zones only"]
+    ENG --> GUARD["Independent checks<br/>qty_guard: flag, never edit"]
+    GUARD --> UI["Review screen<br/>a person verifies"]
+    UI --> CSV["ERP import CSV"]
+
+    classDef guard fill:#ECFDF5,stroke:#16A34A,color:#000
+    class GUARD,UI guard
 ```
 
 One independent engine per customer format, so fixing one customer cannot break another.
+
+### Reading from zones, not from the whole page
+
+```mermaid
+flowchart TD
+    A["Marked zone on a sample page<br/>(drawn once by a person)"] --> B["Find anchors on the new page"]
+    B --> C["Measure how the page moved:<br/>shift, scale, rotation"]
+    C --> D["Map the zone onto this page"]
+    D --> E{"Value found<br/>inside the zone?"}
+    E -- yes --> F["Extract it"]
+    E -- no --> G["Unknown / red<br/>never borrow from elsewhere"]
+    classDef bad fill:#FEF2F2,stroke:#DC2626,color:#000
+    class G bad
+```
+
+A whole-page search once picked a PO number out of a Remarks box instead of the real one. Zone-only reading removes that whole class of silent error.
+
+### How a quantity is judged
+
+```mermaid
+flowchart TD
+    Q["Extracted row: item + qty"] --> C1{"Is this number in the<br/>Quantity column,<br/>on this item's line?"}
+    C1 -- no --> F1["FLAG: read from another column?"]
+    C1 -- yes --> C2{"qty x unit price<br/>= line amount?"}
+    C2 -- no --> F2["FLAG: a digit may be misread<br/>(shows the implied qty)"]
+    C2 -- yes --> C3{"Any number in the column<br/>that no row claimed?"}
+    C3 -- yes --> F3["PAGE WARNING: a row may be missing"]
+    C3 -- no --> C4{"Table total matches<br/>the rows read?"}
+    C4 -- no --> F4["PAGE WARNING: a row is missing or misread"]
+    C4 -- yes --> OK["Row verified"]
+    classDef bad fill:#FEF2F2,stroke:#DC2626,color:#000
+    classDef ok fill:#ECFDF5,stroke:#16A34A,color:#000
+    class F1,F2,F3,F4 bad
+    class OK ok
+```
+
+The checks only **flag**. They never change a value, so a bug in a check can cause an extra warning but never a wrong number.
+
+### Which check catches which failure
+
+These are the five scenarios in the demo below.
+
+| Failure | Caught by |
+|---|---|
+| Digit misread (90 read as 96) | qty x price does not equal the line amount |
+| A whole line missing from the OCR | table total does not match the rows read |
+| Quantity inflated 100x (24 read as 2400) | table total does not match the rows read |
+| Engine reads the wrong column | number not found in the Quantity column |
+| Clean scan | nothing flagged, all green |
 
 ## Try it (about 10 seconds, no OCR install)
 
