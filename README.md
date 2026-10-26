@@ -45,9 +45,13 @@ One independent engine per customer format, so fixing one customer cannot break 
 
 ```bash
 pip install -r requirements.txt
-python demo/make_sample.py     # builds a fictional PO PDF + the zone template
-python demo/demo.py            # injects OCR failures and shows what the guard does
+python demo/gui.py             # review screen in your browser: http://127.0.0.1:8765
+python demo/demo.py            # same scenarios as plain terminal output
 ```
+
+![Review screen: a missing row is caught by the table-total check and export is held](docs/screenshot-flagged.jpg)
+
+The screen mimics the tool's review step on a fictional PO. Pick a scenario to inject an OCR failure; extraction reads **only from the marked zones**, and [`qty_guard`](src/qty_guard.py) judges each row. While anything is flagged, **Export is disabled**. (The real app is a PyQt6 desktop program; this demo is a small web version of the same idea.)
 
 The demo reads a fictional 4-line PO, extracts rows **only from the marked zones**, then replays the page under five failure modes and runs [`qty_guard`](src/qty_guard.py) on each. Sample output (guard messages are in Thai, the working language of the tool; the glosses are mine):
 
@@ -80,7 +84,7 @@ Every injected failure ends in a flag; none passes as green. The OCR stand-in is
 |---|---|
 | [`src/qty_guard.py`](src/qty_guard.py) | Quantity parsing, OCR digit repair, independent cross-check, total-line and row-number guards. Flags only. |
 | [`src/text_layer.py`](src/text_layer.py) | PDF text-layer comparison. |
-| [`demo/`](demo) | Runnable demo: fictional PO generator, zone-only extraction, failure injection. |
+| [`demo/`](demo) | Runnable demo: browser review screen (`gui.py`), terminal version (`demo.py`), fictional PO generator. |
 
 Per-template switches (`TOTAL_CHECK_TEMPLATES`, `PO_FORMATS`, ...) are empty here; in the private tool they are opt-in per customer format after verification on real files.
 

@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PO Verification Demo</title>
+<style>
+:root{--bg:#f6f7f9;--card:#fff;--ink:#1b1f24;--mute:#667085;--line:#e4e7ec;--ok:#16793a;--okbg:#e6f4ea;--bad:#b42318;--badbg:#fdecea;--warn:#8a5a00;--warnbg:#fff4d6;--accent:#1f4fd8}
+@media (prefers-color-scheme:dark){:root{--bg:#12151a;--card:#1b2027;--ink:#e8ebf0;--mute:#98a2b3;--line:#2a313b;--ok:#6fd08c;--okbg:#17301f;--bad:#ff8a80;--badbg:#3a1a18;--warn:#f1c25e;--warnbg:#3a2f12;--accent:#7a9bff}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif}
+header{padding:14px 20px;background:var(--card);border-bottom:1px solid var(--line);display:flex;gap:12px;align-items:baseline;flex-wrap:wrap}
+header h1{font-size:17px;margin:0}header span{color:var(--mute);font-size:13px}
+main{max-width:1180px;margin:0 auto;padding:16px 16px 40px}
+.picker{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px}
+.picker button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:8px 12px;border-radius:8px;cursor:pointer}
+.picker button[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent) inset;font-weight:600}
+.grid{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.05fr);gap:16px}
+@media(max-width:860px){.grid{grid-template-columns:1fr}}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute);margin:0 0 10px}
+.card img{width:100%;height:auto;border:1px solid var(--line);border-radius:6px;background:#fff;display:block}
+table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:top}
+th{font-size:12px;color:var(--mute);font-weight:600}td.num{font-variant-numeric:tabular-nums;text-align:right}
+.pill{display:inline-block;padding:1px 9px;border-radius:99px;font-size:12px;font-weight:600}
+.pill.ok{background:var(--okbg);color:var(--ok)}.pill.bad{background:var(--badbg);color:var(--bad)}
+tr.bad td{background:color-mix(in srgb,var(--badbg) 55%,transparent)}
+.reason{color:var(--bad);font-size:13px}
+.warn{background:var(--warnbg);color:var(--warn);border-radius:8px;padding:8px 10px;margin-top:8px;font-size:14px}
+.verdict{margin-top:12px;padding:10px 12px;border-radius:8px;font-weight:600}
+.verdict.good{background:var(--okbg);color:var(--ok)}.verdict.stop{background:var(--badbg);color:var(--bad)}
+.export{margin-top:12px;display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.export button{font:inherit;padding:9px 16px;border-radius:8px;border:0;background:var(--accent);color:#fff;font-weight:600;cursor:pointer}
+.export button:disabled{background:var(--line);color:var(--mute);cursor:not-allowed}
+.note{color:var(--mute);font-size:13px}
+</style>
+</head>
+<body>
+<header><h1>PO Verification</h1><span>Demo with a fictional purchase order. OCR failures are simulated.</span></header>
+<main>
+  <div class="picker" id="picker" role="group" aria-label="Scenario"></div>
+  <div class="grid">
+    <section class="card"><h2>Page as read</h2><img id="page" alt="Rendered purchase order with boxes around quantities"></section>
+    <section class="card">
+      <h2 id="ttl">Extracted rows</h2>
+      <div class="note" id="po"></div>
+      <table><thead><tr><th>Item</th><th>Description</th><th style="text-align:right">Qty</th><th>Check</th></tr></thead><tbody id="rows"></tbody></table>
+      <div id="warns"></div>
+      <div id="verdict" class="verdict"></div>
+      <div class="export"><button id="exp" disabled>Export CSV</button><span class="note" id="expnote"></span></div>
+    </section>
+  </div>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+let cur=0;
+async function load(i){
+  cur=i;
+  document.querySelectorAll('#picker button').forEach((b,k)=>b.setAttribute('aria-pressed',k===i));
+  $('page').src='/page/'+i+'?t='+Date.now();
+  const d=await (await fetch('/data/'+i)).json();
+  $('ttl').textContent=d.title;
+  $('po').textContent='PO number: '+d.po;
+  $('rows').innerHTML=d.rows.map(r=>`<tr class="${r.ok?'':'bad'}"><td>${esc(r.item)}</td><td>${esc(r.desc)}</td><td class="num">${esc(r.qty)}</td>
+    <td><span class="pill ${r.ok?'ok':'bad'}">${r.ok?'OK':'CHECK'}</span>${r.ok?'':`<div class="reason">${esc(r.reason)}</div>`}</td></tr>`).join('');
+  $('warns').innerHTML=d.warnings.map(w=>`<div class="warn">&#9888; ${esc(w)}</div>`).join('');
+  const flagged=d.rows.some(r=>!r.ok)||d.warnings.length>0;
+  const v=$('verdict');
+  if(d.silent){v.className='verdict stop';v.textContent='A wrong value passed silently (this should never happen).';}
+  else if(flagged){v.className='verdict stop';v.textContent='Warnings present: a person must check this document against the original.';}
+  else{v.className='verdict good';v.textContent='All rows verified. Values match the document.';}
+  $('exp').disabled=flagged;
+  $('expnote').textContent=flagged?'Export is held until the flagged items are reviewed.':'Ready to export to the ERP import file.';
+}
+(async()=>{
+  const t=await (await fetch('/scenarios')).json();
+  $('picker').innerHTML=t.map((x,i)=>`<button type="button" aria-pressed="false" data-i="${i}">${esc(x)}</button>`).join('');
+  $('picker').addEventListener('click',e=>{const b=e.target.closest('button');if(b)load(+b.dataset.i)});
+  load(0);
+})();
+</script>
+</body>
+</html>

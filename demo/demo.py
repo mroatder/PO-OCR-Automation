@@ -104,7 +104,10 @@ SCENARIOS = [sc_clean, sc_digit, sc_row_lost, sc_dot, sc_wrong_column]
 
 
 # ------------------------------------------------------------------------ run
-def main():
+TRUE_QTY = ("90", "24", "150", "6")
+
+
+def load_all():
     pdf = os.path.join(HERE, "sample_po.pdf")
     if not os.path.exists(pdf):
         import make_sample
@@ -112,33 +115,42 @@ def main():
     with open(os.path.join(HERE, "template.json"), encoding="utf-8") as f:
         tpl = json.load(f)
     base, w, h = load_nodes(pdf)
+    return pdf, tpl, base, w, h
 
+
+def run_scenario(sc, tpl, base, w, h):
+    """Inject one failure, extract rows from the zones, run the guard. Returns a result dict."""
+    nodes = copy.deepcopy(base)
+    title = sc(nodes, None, w, h)
+    for n in nodes:
+        refresh(n, w, h)
+    po, rows = extract_rows(nodes, tpl)
+    if sc is sc_wrong_column:
+        for r in rows:                              # simulate the engine reading the neighbouring column
+            yc = (r["boxes"]["item_code"][0][1] + r["boxes"]["item_code"][2][1]) / 2 / h
+            near = [n for n in nodes if abs(n["cy"] - yc) < 0.01 and 425 / w < n["cx"] < 470 / w]
+            if near:
+                r["qty"] = near[0]["txt"]; r["boxes"]["qty"] = near[0]["box"]
+    warns = qty_guard.check_page(rows, nodes, tpl, w, h)
+    silent = any(r["qty"] not in TRUE_QTY for r in rows) and         all(r.get("qty_check", {}).get("ok") for r in rows) and not warns
+    return {"title": title, "po": po, "rows": rows, "warnings": warns, "silent": silent, "nodes": nodes}
+
+
+def main():
+    pdf, tpl, base, w, h = load_all()
     print("Fail-loud verification demo (fictional PO, 4 line items, true qty 90/24/150/6)\n")
     for sc in SCENARIOS:
-        nodes = copy.deepcopy(base)
-        title = sc(nodes, None, w, h)
-        for n in nodes:
-            refresh(n, w, h)
-        po, rows = extract_rows(nodes, tpl)
-        if sc is sc_wrong_column:
-            for r in rows:                              # simulate the engine reading the neighbouring column
-                near = [n for n in nodes if abs(n["cy"] - (r["boxes"]["item_code"][0][1] + r["boxes"]["item_code"][2][1]) / 2 / h) < 0.01
-                        and 425 / w < n["cx"] < 470 / w]
-                if near:
-                    r["qty"] = near[0]["txt"]; r["boxes"]["qty"] = near[0]["box"]
-        warns = qty_guard.check_page(rows, nodes, tpl, w, h)
-
-        print(f"== {title}")
-        print(f"   PO {po}")
-        for r in rows:
+        res = run_scenario(sc, tpl, base, w, h)
+        print(f"== {res['title']}")
+        print(f"   PO {res['po']}")
+        for r in res["rows"]:
             c = r.get("qty_check", {})
             tag = "OK  " if c.get("ok") else "FLAG"
             print(f"   [{tag}] {r['item_code']:<8} qty={r['qty']:<7} {c.get('reason', '')[:110]}")
-        for wmsg in warns:
+        for wmsg in res["warnings"]:
             print(f"   [PAGE] {wmsg[:140]}")
-        silent = any(r["qty"] not in ("90", "24", "150", "6") for r in rows) and \
-                 all(r.get("qty_check", {}).get("ok") for r in rows) and not warns
-        print("   -> SILENT WRONG VALUE!" if silent else "   -> nothing wrong passes silently" if sc is not sc_clean else "   -> all green, values correct")
+        print("   -> SILENT WRONG VALUE!" if res["silent"] else
+              "   -> all green, values correct" if sc is sc_clean else "   -> nothing wrong passes silently")
         print()
 
 
